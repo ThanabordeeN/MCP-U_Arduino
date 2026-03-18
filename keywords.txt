@@ -1,0 +1,29 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+McpDevice	KEYWORD1
+McpPinType	KEYWORD1
+McpToolHandler	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+add_pin	KEYWORD2
+add_tool	KEYWORD2
+begin	KEYWORD2
+loop	KEYWORD2
+send_error	KEYWORD2
+send_result	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+MCP_DIGITAL_OUTPUT	LITERAL1
+MCP_DIGITAL_INPUT	LITERAL1
+MCP_PWM_OUTPUT	LITERAL1
+MCP_ADC_INPUT	LITERAL1
+MCP_MAX_PINS	LITERAL1
+MCP_MAX_TOOLS	LITERAL1
