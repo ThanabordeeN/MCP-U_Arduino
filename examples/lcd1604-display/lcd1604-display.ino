@@ -14,7 +14,7 @@
  *     marcoschwartz/LiquidCrystal_I2C @ ^1.1.4
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 #include <LiquidCrystal_I2C.h>
 
 McpDevice mcp("lcd-node", "1.0.0");

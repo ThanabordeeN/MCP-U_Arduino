@@ -15,7 +15,7 @@
  */
 
 #include <WiFi.h>
-#include <McpIot.h>
+#include <MCP-U.h>
 
 // ---------------------------------------------------------------------------
 // Configuration — change these to match your network

@@ -14,7 +14,7 @@
  *     adafruit/Adafruit GFX Library @ ^1.11.9
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 #include <Adafruit_SSD1306.h>
 
 #define SCREEN_WIDTH 128

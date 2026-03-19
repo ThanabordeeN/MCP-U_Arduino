@@ -4,7 +4,7 @@
  * Demonstrates reading params and sending structured results.
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 
 McpDevice mcp("esp32-custom", "1.0.0");
 

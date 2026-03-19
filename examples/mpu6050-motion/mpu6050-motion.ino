@@ -13,7 +13,7 @@
  *     electroniccats/MPU6050 @ ^1.3.0
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 #include <MPU6050_light.h>
 
 McpDevice mcp("motion-node", "1.0.0");

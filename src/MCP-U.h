@@ -1,5 +1,5 @@
 /**
- * McpIot.h — MCP/U: The Unified Interface for AI-Ready Microcontrollers
+ * MCP-U.h — MCP/U: The Unified Interface for AI-Ready Microcontrollers
  *
  * Transforms any Arduino-compatible MCU into an AI-ready device via
  * JSON-RPC 2.0 over any Arduino Stream (Serial, WiFiClient, BluetoothSerial).
@@ -20,22 +20,32 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <Wire.h>
 
 // ---------------------------------------------------------------------------
 // Limits (override via build flags if needed)
 // ---------------------------------------------------------------------------
 
-#ifndef MCP_MAX_PINS
-#define MCP_MAX_PINS  16
-#endif
-
-#ifndef MCP_MAX_TOOLS
-#define MCP_MAX_TOOLS 24
-#endif
-
-#ifndef MCP_SERIAL_BUFFER
-#define MCP_SERIAL_BUFFER 512
+// AVR boards (Uno/Nano) have 2 KB RAM — use tighter defaults
+#if defined(ARDUINO_ARCH_AVR)
+  #ifndef MCP_MAX_PINS
+  #define MCP_MAX_PINS  8
+  #endif
+  #ifndef MCP_MAX_TOOLS
+  #define MCP_MAX_TOOLS 8
+  #endif
+  #ifndef MCP_SERIAL_BUFFER
+  #define MCP_SERIAL_BUFFER 256
+  #endif
+#else
+  #ifndef MCP_MAX_PINS
+  #define MCP_MAX_PINS  16
+  #endif
+  #ifndef MCP_MAX_TOOLS
+  #define MCP_MAX_TOOLS 24
+  #endif
+  #ifndef MCP_SERIAL_BUFFER
+  #define MCP_SERIAL_BUFFER 512
+  #endif
 #endif
 
 // ---------------------------------------------------------------------------
@@ -97,16 +107,6 @@ public:
   void begin(Stream& stream, unsigned long baud = 0);
 
   /**
-   * Enable built-in I2C tools (i2c_scan, i2c_write_reg, i2c_read_reg).
-   * Call before begin().
-   *
-   * @param sda  SDA pin (use -1 for board default)
-   * @param scl  SCL pin (use -1 for board default)
-   * @param freq I2C clock frequency in Hz (default 100000)
-   */
-  void begin_i2c(int sda = -1, int scl = -1, uint32_t freq = 100000);
-
-  /**
    * Call from Arduino loop(). Reads and dispatches incoming JSON-RPC requests.
    */
   void loop();
@@ -116,6 +116,7 @@ public:
    * Standard codes: -32700 parse, -32600 invalid, -32601 not found, -32602 bad params.
    */
   void send_error(int id, int code, const char* message);
+  void send_error(int id, int code, const __FlashStringHelper* message);
 
   /**
    * Send a JSON-RPC 2.0 success response.
@@ -155,14 +156,12 @@ private:
   ToolEntry _tools[MCP_MAX_TOOLS];
   uint8_t   _tool_count;
 
-  bool      _i2c_enabled;
-  TwoWire*  _wire;
-
   // -------------------------------------------------------------------------
   // Internal helpers
   // -------------------------------------------------------------------------
 
-  void        _dispatch(const String& input);
+  void        _dispatch(char* buf);
+  char        _buf[MCP_SERIAL_BUFFER];
   PinEntry*   _find_pin(uint8_t pin);
   ToolEntry*  _find_tool(const char* name);
   const char* _pin_type_str(McpPinType t);
@@ -177,7 +176,4 @@ private:
   void _handle_gpio_read(int id, JsonObject params);
   void _handle_pwm_write(int id, JsonObject params);
   void _handle_adc_read(int id, JsonObject params);
-  void _handle_i2c_scan(int id);
-  void _handle_i2c_write_reg(int id, JsonObject params);
-  void _handle_i2c_read_reg(int id, JsonObject params);
 };

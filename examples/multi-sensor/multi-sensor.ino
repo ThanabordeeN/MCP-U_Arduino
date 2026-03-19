@@ -4,7 +4,7 @@
  * Transport: Serial at 115200 baud.
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 
 McpDevice mcp("esp32-sensors", "1.0.0");
 

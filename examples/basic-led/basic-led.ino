@@ -3,7 +3,7 @@
  * Minimal firmware — LED on GPIO 2, controlled via MCP-IoT over Serial.
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 
 McpDevice mcp("esp32-led", "1.0.0");
 

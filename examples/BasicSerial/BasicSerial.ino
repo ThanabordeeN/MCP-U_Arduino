@@ -11,7 +11,7 @@
  *   GPIO 34 — light sensor (ADC input)
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 
 McpDevice mcp("my-device", "1.0.0");
 

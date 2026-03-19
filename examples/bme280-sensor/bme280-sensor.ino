@@ -14,7 +14,7 @@
  *     adafruit/Adafruit Unified Sensor @ ^1.1.14
  */
 
-#include <McpIot.h>
+#include <MCP-U.h>
 #include <Adafruit_BME280.h>
 
 McpDevice mcp("weather-node", "1.0.0");
