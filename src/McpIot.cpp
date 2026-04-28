@@ -14,15 +14,44 @@ McpDevice::McpDevice(const char* device_name, const char* version)
     _version(version),
     _stream(nullptr),
     _pin_count(0),
-    _tool_count(0) {}
+    _tool_count(0),
+    _buffer_count(0),
+    _has_summary_pin(false),
+    _has_buffer_pin(false),
+    _has_event_pin(false) {}
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 void McpDevice::add_pin(uint8_t pin, const char* name, McpPinType type, const char* description) {
+  McpPinOptions defaultOptions;
+  add_pin(pin, name, type, description, defaultOptions);
+}
+
+void McpDevice::add_pin(uint8_t pin, const char* name, McpPinType type, const char* description, const McpPinOptions& options) {
   if (_pin_count >= MCP_MAX_PINS) return;
-  _pins[_pin_count++] = { pin, name, type, description };
+
+  McpPinOptions normalized = _normalize_options(type, options);
+
+  PinEntry& p = _pins[_pin_count];
+  p.pin = pin;
+  p.name = name;
+  p.type = type;
+  p.description = description;
+  p.options = normalized;
+  p.last_sample_ms = 0;
+  p.has_buffer = false;
+  p.buffer_index = 255;
+
+  _configure_hardware_pin(pin, type, normalized);
+  _attach_buffer_if_needed(_pin_count, normalized);
+
+  if (normalized.enable_summary) _has_summary_pin = true;
+  if (normalized.enable_buffer)  _has_buffer_pin = true;
+  if (normalized.event_enabled)  _has_event_pin = true;
+
+  _pin_count++;
 }
 
 void McpDevice::add_tool(const char* name, const char* description, McpToolHandler handler) {
@@ -43,25 +72,13 @@ void McpDevice::begin(Stream& stream, unsigned long baud) {
 
   // Initialise pins
   for (uint8_t i = 0; i < _pin_count; i++) {
-    switch (_pins[i].type) {
-      case MCP_DIGITAL_OUTPUT:
-        pinMode(_pins[i].pin, OUTPUT);
-        digitalWrite(_pins[i].pin, LOW);
-        break;
-      case MCP_DIGITAL_INPUT:
-        pinMode(_pins[i].pin, INPUT);
-        break;
-      case MCP_PWM_OUTPUT:
-        pinMode(_pins[i].pin, OUTPUT);
-        break;
-      case MCP_ADC_INPUT:
-        // ADC pins need no pinMode
-        break;
-    }
+    _configure_hardware_pin(_pins[i].pin, _pins[i].type, _pins[i].options);
   }
 }
 
 void McpDevice::loop() {
+  _process_sampling();
+
   if (!_stream || !_stream->available()) return;
   uint16_t len = 0;
   while (_stream->available() && len < sizeof(_buf) - 1) {
@@ -105,6 +122,132 @@ void McpDevice::send_result(int id, JsonDocument& doc) {
 }
 
 // ---------------------------------------------------------------------------
+// Option normalisation
+// ---------------------------------------------------------------------------
+
+McpPinOptions McpDevice::_normalize_options(McpPinType type, const McpPinOptions& options) {
+  McpPinOptions normalized = options;
+
+  if (normalized.sample_interval_ms == 0) {
+    normalized.sample_interval_ms = 1000;
+  }
+
+#if defined(MCP_PLATFORM_AVR)
+  // On AVR, if buffer request exceeds platform limit, fall back to summary-only
+  if (normalized.enable_buffer && normalized.buffer_size > MCP_MAX_BUFFER_SIZE) {
+    normalized.enable_buffer = false;
+  }
+#endif
+
+  if (normalized.buffer_size > MCP_MAX_BUFFER_SIZE) {
+    normalized.buffer_size = MCP_MAX_BUFFER_SIZE;
+  }
+
+  if (type == MCP_DIGITAL_OUTPUT || type == MCP_PWM_OUTPUT) {
+    normalized.enable_buffer = false;
+    normalized.enable_summary = false;
+    normalized.event_enabled = false;
+  }
+
+  return normalized;
+}
+
+// ---------------------------------------------------------------------------
+// Hardware pin configuration
+// ---------------------------------------------------------------------------
+
+void McpDevice::_configure_hardware_pin(uint8_t pin, McpPinType type, const McpPinOptions& options) {
+  if (type == MCP_DIGITAL_OUTPUT) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, options.default_state);
+  } else if (type == MCP_DIGITAL_INPUT) {
+    pinMode(pin, INPUT);
+  } else if (type == MCP_ADC_INPUT) {
+    // ADC pins need no pinMode
+  } else if (type == MCP_PWM_OUTPUT) {
+    pinMode(pin, OUTPUT);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Buffer pool management
+// ---------------------------------------------------------------------------
+
+void McpDevice::_attach_buffer_if_needed(uint8_t pin_index, const McpPinOptions& options) {
+  if (!options.enable_buffer || _buffer_count >= MCP_MAX_BUFFERED_PINS) {
+    _pins[pin_index].has_buffer = false;
+    _pins[pin_index].buffer_index = 255;
+    return;
+  }
+
+  uint16_t size = options.buffer_size;
+  if (size == 0) size = MCP_DEFAULT_BUFFER_SIZE;
+  if (size > MCP_MAX_BUFFER_SIZE) size = MCP_MAX_BUFFER_SIZE;
+
+  _buffer_pool[_buffer_count].init(size);
+  _pins[pin_index].has_buffer = true;
+  _pins[pin_index].buffer_index = _buffer_count;
+  _buffer_count++;
+}
+
+// ---------------------------------------------------------------------------
+// Sampling
+// ---------------------------------------------------------------------------
+
+bool McpDevice::_is_input_pin(McpPinType type) {
+  return (type == MCP_DIGITAL_INPUT || type == MCP_ADC_INPUT);
+}
+
+float McpDevice::_read_pin_value(const PinEntry& p) {
+  if (p.type == MCP_ADC_INPUT) {
+    return (float)analogRead(p.pin);
+  }
+  if (p.type == MCP_DIGITAL_INPUT) {
+    return (float)digitalRead(p.pin);
+  }
+  return 0.0f;
+}
+
+void McpDevice::_process_sampling() {
+  unsigned long now = millis();
+
+  for (uint8_t i = 0; i < _pin_count; i++) {
+    PinEntry& p = _pins[i];
+
+    if (!_is_input_pin(p.type)) continue;
+
+    if (!p.options.enable_summary && !p.options.enable_buffer && !p.options.event_enabled) {
+      continue;
+    }
+
+    if (now - p.last_sample_ms < p.options.sample_interval_ms) {
+      continue;
+    }
+
+    p.last_sample_ms = now;
+
+    float value = _read_pin_value(p);
+    _stats[i].add(value);
+
+    if (p.has_buffer) {
+      _buffer_pool[p.buffer_index].add(value);
+    }
+
+    if (p.options.event_enabled) {
+      _evaluate_event(p, value);
+    }
+  }
+}
+
+void McpDevice::_evaluate_event(const PinEntry& p, float value) {
+  // Phase 1-2: lightweight event placeholder.
+  // Actual event queuing is deferred to Phase 4 to keep RAM minimal.
+  // get_pin_events reports current threshold state on demand.
+  (void)p;
+  (void)value;
+}
+
+// ---------------------------------------------------------------------------
 // RPC Dispatcher
 // ---------------------------------------------------------------------------
 
@@ -127,12 +270,15 @@ void McpDevice::_dispatch(char* buf) {
   JsonObject params = req["params"].as<JsonObject>();
 
   // Built-in methods
-  if      (strcmp(method, "get_info")   == 0) { _handle_get_info(id);              return; }
-  else if (strcmp(method, "list_tools") == 0) { _handle_list_tools(id);            return; }
-  else if (strcmp(method, "gpio_write") == 0) { _handle_gpio_write(id, params);    return; }
-  else if (strcmp(method, "gpio_read")  == 0) { _handle_gpio_read(id, params);     return; }
-  else if (strcmp(method, "pwm_write")  == 0) { _handle_pwm_write(id, params);     return; }
-  else if (strcmp(method, "adc_read")   == 0) { _handle_adc_read(id, params);      return; }
+  if      (strcmp(method, "get_info")        == 0) { _handle_get_info(id);              return; }
+  else if (strcmp(method, "list_tools")      == 0) { _handle_list_tools(id);            return; }
+  else if (strcmp(method, "gpio_write")      == 0) { _handle_gpio_write(id, params);    return; }
+  else if (strcmp(method, "gpio_read")       == 0) { _handle_gpio_read(id, params);     return; }
+  else if (strcmp(method, "pwm_write")       == 0) { _handle_pwm_write(id, params);     return; }
+  else if (strcmp(method, "adc_read")        == 0) { _handle_adc_read(id, params);      return; }
+  else if (strcmp(method, "get_pin_summary") == 0) { _handle_get_pin_summary(id, params); return; }
+  else if (strcmp(method, "get_pin_buffer")  == 0) { _handle_get_pin_buffer(id, params);  return; }
+  else if (strcmp(method, "get_pin_events")  == 0) { _handle_get_pin_events(id, params);  return; }
 
   // User-registered tools
   ToolEntry* tool = _find_tool(method);
@@ -151,6 +297,13 @@ void McpDevice::_handle_get_info(int id) {
   res["result"]["version"]   = _version;
   res["result"]["platform"]  = F("arduino");
   res["result"]["pin_count"] = _pin_count;
+#if defined(MCP_PLATFORM_ESP32)
+  res["result"]["memory_profile"] = F("rich");
+#elif defined(MCP_PLATFORM_AVR)
+  res["result"]["memory_profile"] = F("low");
+#else
+  res["result"]["memory_profile"] = F("conservative");
+#endif
   send_result(id, res);
 }
 
@@ -175,6 +328,9 @@ void McpDevice::_handle_list_tools(int id) {
   add_builtin("pwm_write",  "Write PWM duty cycle to a pin");
   add_builtin("adc_read",   "Read ADC value from analog pin");
   add_builtin("get_info",   "Get device metadata");
+  if (_has_summary_pin) add_builtin("get_pin_summary", "Get rolling statistics for a pin");
+  if (_has_buffer_pin)  add_builtin("get_pin_buffer",  "Get recent samples from a buffered pin");
+  if (_has_event_pin)   add_builtin("get_pin_events",  "Get threshold events for a pin");
 #else
   // Full schema for capable boards (ESP32 etc.)
   auto add_builtin = [&](const char* name, const char* desc,
@@ -226,6 +382,28 @@ void McpDevice::_handle_list_tools(int id) {
     t["inputSchema"]["required"].to<JsonArray>();
     t["inputSchema"]["properties"].to<JsonObject>();
   }
+  if (_has_summary_pin) {
+    JsonDocument tmp;
+    JsonObject props = tmp.to<JsonObject>();
+    props["pin"]["type"] = "string"; props["pin"]["description"] = "Pin name";
+    const char* req[] = {"pin"};
+    add_builtin("get_pin_summary", "Get rolling statistics for a pin", req, 1, props);
+  }
+  if (_has_buffer_pin) {
+    JsonDocument tmp;
+    JsonObject props = tmp.to<JsonObject>();
+    props["pin"]["type"] = "string"; props["pin"]["description"] = "Pin name";
+    props["limit"]["type"] = "integer"; props["limit"]["description"] = "Max samples to return";
+    const char* req[] = {"pin"};
+    add_builtin("get_pin_buffer", "Get recent samples from a buffered pin", req, 1, props);
+  }
+  if (_has_event_pin) {
+    JsonDocument tmp;
+    JsonObject props = tmp.to<JsonObject>();
+    props["pin"]["type"] = "string"; props["pin"]["description"] = "Pin name";
+    const char* req[] = {"pin"};
+    add_builtin("get_pin_events", "Get threshold events for a pin", req, 1, props);
+  }
 #endif
 
   // User-registered tools
@@ -246,6 +424,19 @@ void McpDevice::_handle_list_tools(int id) {
     p["name"]        = _pins[i].name;
     p["type"]        = _pin_type_str(_pins[i].type);
     p["description"] = _pins[i].description;
+#if !defined(ARDUINO_ARCH_AVR)
+    JsonObject caps = p["capabilities"].to<JsonObject>();
+    caps["summary"] = _pins[i].options.enable_summary;
+    caps["buffer"]  = _pins[i].has_buffer;
+    caps["events"]  = _pins[i].options.event_enabled;
+    if (_pins[i].options.enable_summary || _pins[i].options.enable_buffer || _pins[i].options.event_enabled) {
+      JsonObject sampling = p["sampling"].to<JsonObject>();
+      sampling["interval_ms"] = _pins[i].options.sample_interval_ms;
+      if (_pins[i].has_buffer) {
+        sampling["buffer_size"] = _buffer_pool[_pins[i].buffer_index].capacity;
+      }
+    }
+#endif
   }
 
   send_result(id, res);
@@ -329,12 +520,138 @@ void McpDevice::_handle_adc_read(int id, JsonObject params) {
 }
 
 // ---------------------------------------------------------------------------
+// New tool handlers: pin summary / buffer / events
+// ---------------------------------------------------------------------------
+
+void McpDevice::_handle_get_pin_summary(int id, JsonObject params) {
+  PinEntry* cfg = nullptr;
+  if (params["pin"].is<const char*>()) {
+    cfg = _find_pin_by_name(params["pin"].as<const char*>());
+  } else if (params["pin"].is<int>()) {
+    cfg = _find_pin(params["pin"].as<int>());
+  }
+
+  if (!cfg) {
+    send_error(id, -32602, F("Pin not found")); return;
+  }
+
+  if (!cfg->options.enable_summary) {
+    send_error(id, -32602, F("Summary not enabled for this pin")); return;
+  }
+
+  uint8_t idx = 255;
+  for (uint8_t i = 0; i < _pin_count; i++) {
+    if (&_pins[i] == cfg) { idx = i; break; }
+  }
+  if (idx == 255) {
+    send_error(id, -32602, F("Pin not found")); return;
+  }
+
+  JsonDocument res;
+  res["result"]["pin"]     = cfg->pin;
+  res["result"]["name"]    = cfg->name;
+  res["result"]["latest"]  = _stats[idx].latest;
+  res["result"]["min"]     = _stats[idx].min_value;
+  res["result"]["max"]     = _stats[idx].max_value;
+  res["result"]["avg"]     = _stats[idx].average();
+  res["result"]["samples"] = _stats[idx].count;
+  send_result(id, res);
+}
+
+void McpDevice::_handle_get_pin_buffer(int id, JsonObject params) {
+  PinEntry* cfg = nullptr;
+  if (params["pin"].is<const char*>()) {
+    cfg = _find_pin_by_name(params["pin"].as<const char*>());
+  } else if (params["pin"].is<int>()) {
+    cfg = _find_pin(params["pin"].as<int>());
+  }
+
+  if (!cfg) {
+    send_error(id, -32602, F("Pin not found")); return;
+  }
+
+  JsonDocument res;
+  res["result"]["pin"] = cfg->name;
+
+  if (!cfg->has_buffer) {
+    res["result"]["buffer_available"] = false;
+    res["result"]["reason"] = F("Buffer disabled on this platform or pin. Use get_pin_summary instead.");
+    send_result(id, res);
+    return;
+  }
+
+  McpRingBuffer& buf = _buffer_pool[cfg->buffer_index];
+  uint16_t limit = buf.count;
+  if (params["limit"].is<int>()) {
+    limit = params["limit"].as<int>();
+    if (limit > buf.count) limit = buf.count;
+  }
+
+  res["result"]["count"] = buf.count;
+  JsonArray values = res["result"]["values"].to<JsonArray>();
+  for (uint16_t i = 0; i < limit; i++) {
+    values.add(buf.get(i));
+  }
+  send_result(id, res);
+}
+
+void McpDevice::_handle_get_pin_events(int id, JsonObject params) {
+  PinEntry* cfg = nullptr;
+  if (params["pin"].is<const char*>()) {
+    cfg = _find_pin_by_name(params["pin"].as<const char*>());
+  } else if (params["pin"].is<int>()) {
+    cfg = _find_pin(params["pin"].as<int>());
+  }
+
+  if (!cfg) {
+    send_error(id, -32602, F("Pin not found")); return;
+  }
+
+  uint8_t idx = 255;
+  for (uint8_t i = 0; i < _pin_count; i++) {
+    if (&_pins[i] == cfg) { idx = i; break; }
+  }
+  if (idx == 255) {
+    send_error(id, -32602, F("Pin not found")); return;
+  }
+
+  JsonDocument res;
+  res["result"]["pin"] = cfg->name;
+  JsonArray events = res["result"]["events"].to<JsonArray>();
+
+  if (cfg->options.event_enabled) {
+    float val = _stats[idx].latest;
+    if (val > cfg->options.max_threshold) {
+      JsonObject e = events.add<JsonObject>();
+      e["type"] = "threshold_high";
+      e["value"] = val;
+      e["threshold"] = cfg->options.max_threshold;
+    }
+    if (val < cfg->options.min_threshold) {
+      JsonObject e = events.add<JsonObject>();
+      e["type"] = "threshold_low";
+      e["value"] = val;
+      e["threshold"] = cfg->options.min_threshold;
+    }
+  }
+
+  send_result(id, res);
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
 McpDevice::PinEntry* McpDevice::_find_pin(uint8_t pin) {
   for (uint8_t i = 0; i < _pin_count; i++) {
     if (_pins[i].pin == pin) return &_pins[i];
+  }
+  return nullptr;
+}
+
+McpDevice::PinEntry* McpDevice::_find_pin_by_name(const char* name) {
+  for (uint8_t i = 0; i < _pin_count; i++) {
+    if (strcmp(_pins[i].name, name) == 0) return &_pins[i];
   }
   return nullptr;
 }
