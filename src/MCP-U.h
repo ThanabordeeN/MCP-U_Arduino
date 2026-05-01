@@ -13,7 +13,7 @@
  *
  * By 2edge.co — LGPL-3.0 — https://2edge.co
  *
- * MIT License — https://github.com/your-repo/mcp-iot
+ * LGPL-3.0 — https://github.com/ThanabordeeN/MCP-U_Arduino
  */
 
 #pragma once

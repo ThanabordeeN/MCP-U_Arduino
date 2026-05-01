@@ -1,5 +1,5 @@
 /**
- * BasicSerial — McpIot example
+ * BasicSerial — MCP-U example
  *
  * Exposes GPIO, PWM, and ADC pins over USB-Serial (115200 baud).
  * Connect with the mcpu-client or any JSON-RPC 2.0 client.

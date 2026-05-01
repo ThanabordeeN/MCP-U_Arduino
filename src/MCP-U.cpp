@@ -1,5 +1,5 @@
 /**
- * McpIot.cpp — MCP/U: The Unified Interface for AI-Ready Microcontrollers
+ * MCP-U.cpp — MCP/U: The Unified Interface for AI-Ready Microcontrollers
  * By 2edge.co — LGPL-3.0 — https://2edge.co
  */
 
@@ -510,10 +510,10 @@ void McpDevice::_handle_adc_read(int id, JsonObject params) {
   res["result"]["pin"]   = cfg->pin;
   res["result"]["name"]  = cfg->name;
   res["result"]["value"] = raw;
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(MCP_PLATFORM_AVR)
   // AVR ADC is 10-bit (0–1023); integer mV avoids softfloat library (~1.5KB)
   res["result"]["mv"] = (uint32_t)raw * 3300 / 1023;
-#else
+#elif defined(MCP_PLATFORM_ESP32)
   res["result"]["volts"] = (raw / 4095.0f) * 3.3f;
 #endif
   send_result(id, res);
@@ -582,6 +582,11 @@ void McpDevice::_handle_get_pin_buffer(int id, JsonObject params) {
 
   McpRingBuffer& buf = _buffer_pool[cfg->buffer_index];
   uint16_t limit = buf.count;
+#if defined(MCP_PLATFORM_AVR)
+  if (limit > MCP_DEFAULT_BUFFER_SIZE) {
+    limit = MCP_DEFAULT_BUFFER_SIZE;
+  }
+#endif
   if (params["limit"].is<int>()) {
     limit = params["limit"].as<int>();
     if (limit > buf.count) limit = buf.count;

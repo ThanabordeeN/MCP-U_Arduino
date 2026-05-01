@@ -1,5 +1,5 @@
 /**
- * WiFiTCP — McpIot example
+ * WiFiTCP — MCP-U example
  *
  * Exposes GPIO, PWM, and ADC pins over WiFi TCP (port 3000).
  * Connect with the mcpu-client or any JSON-RPC 2.0 TCP client.

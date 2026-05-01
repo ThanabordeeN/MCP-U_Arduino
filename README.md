@@ -1,10 +1,10 @@
-# McpIot
+# MCP-U
 
 **MCP/U — The Unified Interface for AI-Ready Microcontrollers**
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL%20v3-blue.svg)](LICENSE)
 [![Arduino Library](https://img.shields.io/badge/Arduino-Library%20Manager-blue)](https://www.arduino.cc/reference/en/libraries/)
-[![PlatformIO](https://img.shields.io/badge/PlatformIO-compatible-orange)](https://platformio.org/lib/show/McpIot)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-compatible-orange)](https://platformio.org/lib/show/MCP-U)
 
 > Transform any Arduino-compatible MCU into an AI-controllable device via the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -12,14 +12,14 @@
 
 ---
 
-## What is McpIot?
+## What is MCP-U?
 
-McpIot implements **JSON-RPC 2.0 over any Arduino `Stream`** (Serial, WiFiClient, BluetoothSerial, etc.), exposing your MCU's GPIO, PWM, ADC, and I2C peripherals as MCP tools that any AI agent can discover and call at runtime — zero hardcoded tool names required.
+MCP-U implements **JSON-RPC 2.0 over any Arduino `Stream`** (Serial, WiFiClient, BluetoothSerial, etc.), exposing your MCU's GPIO, PWM, ADC, and I2C peripherals as MCP tools that any AI agent can discover and call at runtime — zero hardcoded tool names required.
 
 ```
 ┌──────────────────┐         ┌──────────────────────┐          ┌───────────────┐
 │  Claude / Gemini │◄──MCP──►│  mcpu-client (npm)   │◄─Serial─►|   Your MCU    │
-│  or any LLM      │  stdio  │  Dynamic tool regist.│  /TCP    │  McpIot lib   │
+│  or any LLM      │  stdio  │  Dynamic tool regist.│  /TCP    │  MCP-U lib    │
 └──────────────────┘         └──────────────────────┘          └───────────────┘
 ```
 
@@ -35,7 +35,7 @@ McpIot implements **JSON-RPC 2.0 over any Arduino `Stream`** (Serial, WiFiClient
 ### Arduino IDE (Library Manager)
 
 1. Open **Sketch → Include Library → Manage Libraries…**
-2. Search for **McpIot**
+2. Search for **MCP-U**
 3. Click **Install**
 
 ### PlatformIO
@@ -43,7 +43,7 @@ McpIot implements **JSON-RPC 2.0 over any Arduino `Stream`** (Serial, WiFiClient
 ```ini
 ; platformio.ini
 lib_deps =
-    ThanabordeeN/McpIot
+    ThanabordeeN/MCP-U_Arduino
     bblanchon/ArduinoJson @ ^7
 ```
 
@@ -66,7 +66,7 @@ Download this repo as a ZIP and use **Sketch → Include Library → Add .ZIP Li
 ### Serial (USB)
 
 ```cpp
-#include <McpIot.h>
+#include <MCP-U.h>
 
 McpDevice mcp("my-device", "1.0.0");
 
@@ -92,7 +92,7 @@ claude mcp add mcpu -e SERIAL_PORT=/dev/ttyACM0 -- npx mcpu-client
 
 ```cpp
 #include <WiFi.h>
-#include <McpIot.h>
+#include <MCP-U.h>
 
 McpDevice  mcp("esp32-wifi", "1.0.0");
 WiFiServer server(3000);
@@ -338,7 +338,7 @@ claude mcp add mcpu -e SERIAL_PORT=/dev/ttyACM0 -- npx mcpu-client
 
 ## Protocol
 
-McpIot speaks **JSON-RPC 2.0** over any `Stream`. Each message is a single line of JSON terminated with `\n`.
+MCP-U speaks **JSON-RPC 2.0** over any `Stream`. Each message is a single line of JSON terminated with `\n`.
 
 **Request (host → MCU):**
 ```json
