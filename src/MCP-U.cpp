@@ -56,7 +56,12 @@ void McpDevice::add_pin(uint8_t pin, const char* name, McpPinType type, const ch
 
 void McpDevice::add_tool(const char* name, const char* description, McpToolHandler handler) {
   if (_tool_count >= MCP_MAX_TOOLS) return;
-  _tools[_tool_count++] = { name, description, handler };
+  _tools[_tool_count++] = { name, description, handler, 0 };
+}
+
+void McpDevice::add_tool(const char* name, const char* description, McpToolHandler handler, McpPollConfig poll) {
+  if (_tool_count >= MCP_MAX_TOOLS) return;
+  _tools[_tool_count++] = { name, description, handler, poll.interval_ms };
 }
 
 void McpDevice::begin(Stream& stream, unsigned long baud) {
@@ -385,14 +390,14 @@ void McpDevice::_handle_list_tools(int id) {
   if (_has_summary_pin) {
     JsonDocument tmp;
     JsonObject props = tmp.to<JsonObject>();
-    props["pin"]["type"] = "string"; props["pin"]["description"] = "Pin name";
+    props["pin"]["type"] = "integer"; props["pin"]["description"] = "GPIO pin number";
     const char* req[] = {"pin"};
     add_builtin("get_pin_summary", "Get rolling statistics for a pin", req, 1, props);
   }
   if (_has_buffer_pin) {
     JsonDocument tmp;
     JsonObject props = tmp.to<JsonObject>();
-    props["pin"]["type"] = "string"; props["pin"]["description"] = "Pin name";
+    props["pin"]["type"] = "integer"; props["pin"]["description"] = "GPIO pin number";
     props["limit"]["type"] = "integer"; props["limit"]["description"] = "Max samples to return";
     const char* req[] = {"pin"};
     add_builtin("get_pin_buffer", "Get recent samples from a buffered pin", req, 1, props);
@@ -400,7 +405,7 @@ void McpDevice::_handle_list_tools(int id) {
   if (_has_event_pin) {
     JsonDocument tmp;
     JsonObject props = tmp.to<JsonObject>();
-    props["pin"]["type"] = "string"; props["pin"]["description"] = "Pin name";
+    props["pin"]["type"] = "integer"; props["pin"]["description"] = "GPIO pin number";
     const char* req[] = {"pin"};
     add_builtin("get_pin_events", "Get threshold events for a pin", req, 1, props);
   }
@@ -414,6 +419,10 @@ void McpDevice::_handle_list_tools(int id) {
     t["inputSchema"]["type"] = "object";
     t["inputSchema"]["required"].to<JsonArray>();
     t["inputSchema"]["properties"].to<JsonObject>();
+    if (_tools[i].poll_interval_ms > 0) {
+      t["polling"]["enabled"]     = true;
+      t["polling"]["interval_ms"] = _tools[i].poll_interval_ms;
+    }
   }
 
   // Pin registry

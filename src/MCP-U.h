@@ -277,6 +277,19 @@ struct McpRingBuffer {
 typedef void (*McpToolHandler)(int id, JsonObject params);
 
 // ---------------------------------------------------------------------------
+// McpPollConfig — declare that a tool should be polled automatically
+// ---------------------------------------------------------------------------
+
+struct McpPollConfig {
+  uint16_t interval_ms;
+  explicit McpPollConfig(uint16_t ms) : interval_ms(ms) {}
+};
+
+inline McpPollConfig McpPolling(uint16_t interval_ms) {
+  return McpPollConfig(interval_ms);
+}
+
+// ---------------------------------------------------------------------------
 // McpDevice
 // ---------------------------------------------------------------------------
 
@@ -308,6 +321,7 @@ public:
    * Must be called before begin().
    */
   void add_tool(const char* name, const char* description, McpToolHandler handler);
+  void add_tool(const char* name, const char* description, McpToolHandler handler, McpPollConfig poll);
 
   /**
    * Start the MCP device on any Arduino Stream.
@@ -359,6 +373,7 @@ private:
     const char*    name;
     const char*    description;
     McpToolHandler handler;
+    uint16_t       poll_interval_ms;
   };
 
   // -------------------------------------------------------------------------
