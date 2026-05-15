@@ -1,0 +1,22 @@
+{
+  "name": "MCP-U",
+  "version": "1.2.0",
+  "description": "MCP/U - The Unified Interface for AI-Ready Microcontrollers. JSON-RPC 2.0 over any Stream.",
+  "keywords": ["mcp", "iot", "json-rpc", "serial", "ai", "llm", "gpio", "mcpu"],
+  "authors": [
+    {
+      "name": "2edge.co",
+      "url": "https://2edge.co"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ThanabordeeN/MCP-U_Arduino"
+  },
+  "license": "LGPL-3.0",
+  "frameworks": "arduino",
+  "platforms": ["espressif32", "espressif8266", "atmelavr"],
+  "dependencies": {
+    "bblanchon/ArduinoJson": "^7"
+  }
+}
